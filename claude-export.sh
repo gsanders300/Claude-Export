@@ -1,41 +1,5 @@
 #!/usr/bin/env bash
 # claude-export: export a Claude Code session to a formatted markdown transcript.
-# https://github.com/gsanders300/Claude-Export
-#
-# Finds your Claude Code transcript folder and the current project's sessions
-# automatically. Run it from inside a project folder, or from anywhere with --all.
-#
-# Installation (macOS):
-#   1. Check that jq 1.6 or newer is installed (recent macOS versions include
-#      it):   jq --version
-#      If it's missing or older:   brew install jq
-#   2. Save this file as ~/bin/claude-export and make it executable:
-#        mkdir -p ~/bin
-#        mv ~/Downloads/claude-export.sh ~/bin/claude-export
-#        chmod +x ~/bin/claude-export
-#   3. Add ~/bin to your PATH (one time only):
-#        echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
-#        source ~/.zshrc
-#   4. Test it from a folder where you've used Claude Code:
-#        claude-export --where
-#        claude-export --list
-#
-#   Tip: inside a Claude Code session, type  ! claude-export  to export the
-#   session you're in without leaving it.
-#
-#   Optional: to export every session automatically when it ends, add this
-#   hook to ~/.claude/settings.json (merge it into any existing "hooks"):
-#     {
-#       "hooks": {
-#         "SessionEnd": [
-#           { "hooks": [ { "type": "command",
-#             "command": "CLAUDE_EXPORT_DIR=~/Documents/claude-transcripts ~/bin/claude-export \"$(jq -r .transcript_path)\"" } ] }
-#         ]
-#       }
-#     }
-#
-#   Also runs on Linux; --open, --reveal, and --copy are macOS only.
-#   For Windows, see WINDOWS NOTES below the options.
 #
 # Usage: claude-export [options] [session] [output.md]
 #
@@ -43,6 +7,8 @@
 #                    Defaults to the most recent session.
 #   output.md        Output path. Defaults to a descriptive name, such as
 #                    2026-09-27_coverage-monitor_refactor-the-publisher-list.md
+#
+#   Run it from a project folder (or a subfolder), or from anywhere with --all.
 #
 # Finding sessions:
 #   --list           List recent sessions (this project, or all projects if
@@ -57,7 +23,8 @@
 #                    sections instead (needs a viewer that renders HTML, such
 #                    as VS Code, Obsidian, Typora, or GitHub)
 #   --redact         Mask API keys, tokens, passwords, private keys, emails,
-#                    internal URLs, private IP addresses, and your home folder
+#                    internal URLs, private IP addresses, your home folder,
+#                    and your username
 #
 # Mac conveniences:
 #   --open           Open the transcript in your default markdown app
@@ -72,80 +39,16 @@
 # Environment variables:
 #   CLAUDE_EXPORT_DIR             Folder for exports (default: current folder)
 #   CLAUDE_EXPORT_REDACT_DOMAINS  Comma-separated domains that --redact treats
-#                                 as internal (default: internalfb.com,fburl.com,
-#                                 fb.workplace.com)
+#                                 as internal (default: none)
 #   CLAUDE_CONFIG_DIR             Custom Claude Code config folder, if you use one
-
-# ---------------------------------------------------------------------------
-# WINDOWS NOTES (for future work; none of this has been tested)
-# ---------------------------------------------------------------------------
-# Running it today:
 #
-#   WSL: works as is, as long as Claude Code also runs inside WSL (its
-#   transcripts then live in the WSL home folder). Only --open, --reveal,
-#   and --copy are unavailable; they print a warning.
-#
-#   Native Windows (Claude Code using Git Bash): run the script from Git
-#   Bash, not PowerShell or Command Prompt.
-#     1. Install jq from PowerShell, then restart Git Bash and check it:
-#          winget install jqlang.jq
-#          jq --version
-#     2. Save the script as ~/bin/claude-export with Unix (LF) line endings.
-#        Windows (CRLF) line endings stop bash from running it. To fix a
-#        file that has them:
-#          sed -i 's/\r$//' ~/bin/claude-export
-#     3. If ~/bin isn't on your PATH, add the PATH line from installation
-#        step 3 to ~/.bashrc (Git Bash) instead of ~/.zshrc.
-#     4. Automatic project matching doesn't work yet (see to-do 1), so use
-#        the all-projects list:
-#          claude-export --all --list
-#          claude-export --all 3
-#
-# To-do for full native Windows support:
-#
-#   1. Project matching (find_project_dir). Transcripts record Windows paths
-#      such as C:\Users\geoff\project, but Git Bash's pwd returns
-#      /c/Users/geoff/project, so they never match. Convert before
-#      comparing, for example HERE_WIN="$(cygpath -w "$HERE")", and compare
-#      case-insensitively, since Windows paths are. short_path also assumes
-#      a Unix-style $HOME and needs the same treatment.
-#
-#   2. Paths inside the jq program. The Project header line, the Files
-#      changed list (which trims "$cwd/"), and --redact's home-folder
-#      masking all compare against Unix-style paths. Pass the Windows form
-#      of $HOME as well (cygpath -w "$HOME") and handle backslash
-#      separators.
-#
-#   3. Mac conveniences. Detect Windows with
-#        case "$(uname)" in MINGW*|MSYS*|CYGWIN*) ... ;; esac
-#      then map:
-#        --open    start "" "$OUT"
-#        --reveal  explorer //select,"$(cygpath -w "$OUT")"
-#                  (the double slash stops Git Bash converting /select)
-#        --copy    clip < "$OUT"
-#                  (clip can garble non-English characters; PowerShell's
-#                  Get-Content -Raw ... | Set-Clipboard is a safer option)
-#      For WSL, the equivalents are wslview (from the wslu package) for
-#      --open and clip.exe for --copy.
-#
-#   4. Timestamps. Check that jq's strflocaltime shows the correct local
-#      time and time zone name in Windows builds of jq. If it doesn't,
-#      switch to strftime and label times as UTC.
-#
-#   5. Auto-export hook. Claude Code runs hook commands through Git Bash on
-#      Windows, so the hook in the installation section should work. Check
-#      that transcript_path arrives in a form the script's file checks
-#      accept, and change ~/Documents/claude-transcripts to a Windows-
-#      friendly location if needed.
-#
-#   6. Testing. Run --where and --list first, then export a short session
-#      with --tools, and confirm the header, links, and tool appendix look
-#      right before relying on it.
+# Installation, auto-export, and Windows notes:
+#   https://github.com/gsanders300/Claude-Export
 
 set -euo pipefail
 
-VERSION="1.0.0"
-REDACT_DOMAINS="${CLAUDE_EXPORT_REDACT_DOMAINS-internalfb.com,fburl.com,fb.workplace.com}"
+VERSION="1.1.0"
+REDACT_DOMAINS="${CLAUDE_EXPORT_REDACT_DOMAINS:-}"
 
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; }
 die() { echo "$*" >&2; exit 1; }
@@ -153,7 +56,7 @@ die() { echo "$*" >&2; exit 1; }
 # ---------------------------------------------------------------------------
 # Arguments
 # ---------------------------------------------------------------------------
-GLOBAL=0; MODE=export; TOOLS=false; REDACT=false; RICH=false
+GLOBAL=0; MODE="export"; TOOLS=false; REDACT=false; RICH=false
 OPEN=0; REVEAL=0; COPY=0; SEL=""; OUT_ARG=""
 
 while [[ $# -gt 0 ]]; do
@@ -181,9 +84,11 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-command -v jq >/dev/null 2>&1 || die "jq is not installed. Install it with: brew install jq"
+if [[ "$(uname)" == "Darwin" ]]; then IS_MAC=1; JQ_HINT="brew install jq"
+else IS_MAC=0; JQ_HINT="your package manager, for example: sudo apt install jq"; fi
+command -v jq >/dev/null 2>&1 || die "jq is not installed. Install it with $JQ_HINT"
 case "$(jq --version 2>/dev/null)" in
-  jq-1.[0-5]|jq-1.[0-5].*|jq-1.[0-5]-*) die "jq 1.6 or newer is required. Update with: brew install jq" ;;
+  jq-1.[0-5]|jq-1.[0-5].*|jq-1.[0-5]-*) die "jq 1.6 or newer is required. Update it with $JQ_HINT" ;;
 esac
 
 # ---------------------------------------------------------------------------
@@ -213,19 +118,40 @@ def prompt_text:
     | if ($t | is_noise) then null else $t end
   end;
 def slug: ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "");
-def mdline($label; $val): if ($val // "") == "" then empty else "- **\($label):** \($val)" end;
+def mdline($name; $val): if ($val // "") == "" then empty else "- **\($name):** \($val)" end;
+
+# --redact. $domains is a comma-separated list; $home becomes "~" (also in
+# the dashed form used for project folder names), and the bare username
+# becomes [USER] unless it's too short or generic to mask safely.
+def domre($domains):
+  $domains | split(",") | map(gsub("^\\s+|\\s+$"; "") | select(length > 0) | gsub("\\."; "\\.")) | join("|");
+def redact($domre; $home; $user):
+  gsub("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----"; "[REDACTED PRIVATE KEY]")
+  | gsub("eyJ[A-Za-z0-9_-]{8,}\\.eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}"; "[REDACTED TOKEN]")
+  | gsub("\\b(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|EAA[A-Za-z0-9]{30,})"; "[REDACTED TOKEN]")
+  | gsub("(?<p>[Bb]earer\\s+)[A-Za-z0-9._~+/=-]{16,}"; "\(.p)[REDACTED TOKEN]")
+  | gsub("(?<k>(api[_-]?key|secret|token|passw(or)?d|pwd|client[_-]?secret|access[_-]?key)[\"']?\\s*[:=]\\s*[\"']?)(?!\\[REDACTED)[^\\s\"',;]{6,}"; "\(.k)[REDACTED]"; "i")
+  | (if $domre == "" then . else gsub("https?://([A-Za-z0-9-]+\\.)*(\($domre))(/[^\\s)\\]>\"'`]*)?"; "[INTERNAL URL]"; "i") end)
+  | gsub("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"; "[EMAIL]")
+  | gsub("\\b(10\\.[0-9]{1,3}|192\\.168|172\\.(1[6-9]|2[0-9]|3[01]))\\.[0-9]{1,3}\\.[0-9]{1,3}\\b"; "[PRIVATE IP]")
+  | split($home) | join("~") | split($home | gsub("/"; "-")) | join("~")
+  | if ($user | length) < 3 or $user == "root" then .
+    else gsub("\\b\($user | gsub("(?<c>[.^$*+?()\\[\\]{}|\\\\])"; "\\\(.c)"))\\b"; "[USER]"; "i") end;
 JQ
 
-# Filename parts: date|project|title|session id
+# Filename parts: date|project|title|session id|has content
 read -r -d '' JQ_META << 'JQ' || true
+def scrub: if $redact then redact(domre($domains); $home; $user) else . end;
 entries as $E
 | ($E | map(.timestamp // empty | ts2epoch) | map(select(. != null)) | min | localfmt("%Y-%m-%d")) as $day
 | ($E | map(.cwd // empty) | first // ""
-   | if . == $home then "home" else (split("/") | last // "" | slug) end) as $proj
-| ($E | map(select(.type == "user") | prompt_text | select(. != null)) | first // ""
+   | if . == $home then "home" else (scrub | split("/") | last // "" | slug) end) as $proj
+| ($E | map(select(.type == "user") | prompt_text | select(. != null))) as $prompts
+| ($prompts | first // "" | scrub
    | split("\n") | .[0] // "" | slug | split("-") | .[0:6] | join("-") | .[0:50] | gsub("-+$"; "")) as $title
 | ($E | map(.sessionId // empty) | first // "") as $sid
-| [$day, $proj, $title, $sid] | join("|")
+| ($E | any(.[]; .type == "assistant" and .message.model != "<synthetic>")) as $replies
+| [$day, $proj, $title, $sid, (($prompts | length) > 0 or $replies)] | map(tostring) | join("|")
 JQ
 
 # Full transcript
@@ -404,21 +330,10 @@ def render_tool_plain($results; $cwd; $x):
     + " · from [exchange \($x)](#exchange-\($x))"
     + (if .content == "" then "" else "\n\n" + .content end);
 
-def redact($domre):
-  gsub("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----"; "[REDACTED PRIVATE KEY]")
-  | gsub("eyJ[A-Za-z0-9_-]{8,}\\.eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}"; "[REDACTED TOKEN]")
-  | gsub("\\b(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|EAA[A-Za-z0-9]{30,})"; "[REDACTED TOKEN]")
-  | gsub("(?<p>[Bb]earer\\s+)[A-Za-z0-9._~+/=-]{16,}"; "\(.p)[REDACTED TOKEN]")
-  | gsub("(?<k>(api[_-]?key|secret|token|passw(or)?d|pwd|client[_-]?secret|access[_-]?key)[\"']?\\s*[:=]\\s*[\"']?)(?!\\[REDACTED)[^\\s\"',;]{6,}"; "\(.k)[REDACTED]"; "i")
-  | (if $domre == "" then . else gsub("https?://([A-Za-z0-9-]+\\.)*(\($domre))(/[^\\s)\\]>\"'`]*)?"; "[INTERNAL URL]"; "i") end)
-  | gsub("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"; "[EMAIL]")
-  | gsub("\\b(10\\.[0-9]{1,3}|192\\.168|172\\.(1[6-9]|2[0-9]|3[01]))\\.[0-9]{1,3}\\.[0-9]{1,3}\\b"; "[PRIVATE IP]");
-
 entries as $E
-| ($domains | split(",") | map(gsub("^\\s+|\\s+$"; "") | select(length > 0) | gsub("\\."; "\\.")) | join("|")) as $domre
 | ($E | map(.timestamp // empty | ts2epoch) | map(select(. != null))) as $times
 | ($times | min) as $start
-| ($times | max) as $end
+| ($times | max) as $finish
 | ($start | localfmt("%Y-%m-%d")) as $day
 | ($E | map(.cwd // empty) | first // "") as $cwd
 | ($E | map(.gitBranch // empty | select(. != "" and . != "HEAD")) | first // "") as $branch
@@ -500,8 +415,8 @@ entries as $E
 | ([ mdline("Project"; if $proj == "" then "" else "`\($proj)`" end),
      mdline("Branch"; if $branch == "" then "" else "`\($branch)`" end),
      mdline("Started"; $start | localfmt("%Y-%m-%d %H:%M %Z")),
-     mdline("Ended"; $end | localfmt("%Y-%m-%d %H:%M %Z")),
-     mdline("Duration"; if $start == null then "" else ($end - $start | dur) end),
+     mdline("Ended"; $finish | localfmt("%Y-%m-%d %H:%M %Z")),
+     mdline("Duration"; if $start == null then "" else ($finish - $start | dur) end),
      mdline("Exchanges"; "\($np) prompt\(if $np == 1 then "" else "s" end), \($nr) repl\(if $nr == 1 then "y" else "ies" end)"),
      mdline("Files changed"; $changedtxt),
      mdline("Model"; $models),
@@ -556,7 +471,7 @@ entries as $E
    end) as $appendix
 | ("# \($title)\n\n" + $header + (if $toc == "" then "" else "\n\n" + $toc end) + "\n\n---\n\n" + $body
    + (if $appendix == "" then "" else "\n\n---\n\n## Tool activity\n\n" + $appendix end) + "\n")
-| if $redact then redact($domre) | split($home) | join("~") | split($home | gsub("/"; "-")) | join("~") else . end
+| if $redact then redact(domre($domains); $home; $user) else . end
 JQ
 
 # ---------------------------------------------------------------------------
@@ -596,7 +511,8 @@ short_path() {
 }
 
 ROOTS="$(find_roots)"
-if [[ -z "$ROOTS" ]]; then
+# Exporting a .jsonl file by path doesn't need the transcript folder.
+if [[ -z "$ROOTS" && ( "$MODE" != export || "$SEL" != *.jsonl ) ]]; then
   echo "Could not find a Claude Code transcript folder." >&2
   echo "Checked: ${CLAUDE_CONFIG_DIR:+$CLAUDE_CONFIG_DIR/projects, }$HOME/.claude/projects, ${XDG_CONFIG_HOME:-$HOME/.config}/claude/projects" >&2
   die "If yours is elsewhere, set CLAUDE_CONFIG_DIR to the folder that contains 'projects'."
@@ -605,30 +521,53 @@ fi
 HERE="$(pwd)"
 HERE_REAL="$(pwd -P)"
 
-# Match the working directory recorded inside each project's newest session.
+# Match the working directory recorded inside each project's newest session,
+# trying the current folder first, then its parents, nearest first. $HOME and
+# / only match exactly, since almost every folder is inside them.
+# macOS folder names are case-insensitive, so paths are compared that way there.
+# Prints: project folder<TAB>matching folder (the current one or a parent)
 find_project_dir() {
-  local root dir f cwd
+  local root dir f cwd map="" a="$HERE" b="$HERE_REAL" d fold=0
+  if [[ $IS_MAC -eq 1 ]]; then shopt -s nocasematch; fold=1; fi
   while IFS= read -r root; do
     for dir in "$root"/*/; do
       [[ -d "$dir" ]] || continue
+      # shellcheck disable=SC2012  # ls -t is the portable way to sort by date
       f="$(ls -t "$dir"*.jsonl 2>/dev/null | head -1 || true)"
       [[ -n "$f" ]] || continue
       cwd="$(session_cwd "$f")"
       if [[ "$cwd" == "$HERE" || "$cwd" == "$HERE_REAL" ]]; then
-        echo "${dir%/}"
+        printf '%s\t%s\n' "${dir%/}" "$HERE"
+        return
+      fi
+      if [[ -n "$cwd" ]]; then map="$map$cwd"$'\t'"${dir%/}"$'\n'; fi
+    done
+  done <<< "$ROOTS"
+  while [[ "$a" != / || "$b" != / ]]; do
+    a="$(dirname "$a")"; b="$(dirname "$b")"
+    for d in "$a" "$b"; do
+      if [[ "$d" == / || "$d" == "$HOME" ]]; then continue; fi
+      dir="$(D="$d" F=$fold awk -F'\t' '
+        function k(s) { return ENVIRON["F"] == 1 ? tolower(s) : s }
+        k($1) == k(ENVIRON["D"]) { print $2; exit }' <<< "$map")"
+      if [[ -n "$dir" ]]; then
+        printf '%s\t%s\n' "$dir" "$d"
         return
       fi
     done
-  done <<< "$ROOTS"
+  done
 }
 
-PROJECT_DIR=""
+PROJECT_DIR=""; PROJECT_CWD=""
 if [[ $GLOBAL -eq 0 && "$SEL" != *.jsonl ]]; then
-  PROJECT_DIR="$(find_project_dir)"
+  IFS=$'\t' read -r PROJECT_DIR PROJECT_CWD <<< "$(find_project_dir)" || true
   if [[ -z "$PROJECT_DIR" && "$MODE" != "where" ]]; then
-    echo "No sessions found for $(short_path "$HERE"); using all projects." >&2
+    echo "No sessions found for $(short_path "$HERE") or its parent folders; using all projects." >&2
     echo >&2
     GLOBAL=1
+  elif [[ -n "$PROJECT_DIR" && "$PROJECT_CWD" != "$HERE" && "$PROJECT_CWD" != "$HERE_REAL" ]]; then
+    echo "Using sessions from the parent folder $(short_path "$PROJECT_CWD")." >&2
+    echo >&2
   fi
 fi
 
@@ -648,7 +587,7 @@ sessions() {
 list_sessions() {
   local i=1 f
   if [[ $GLOBAL -eq 0 ]]; then
-    echo "Recent sessions for $(short_path "$HERE"):"
+    echo "Recent sessions for $(short_path "$PROJECT_CWD"):"
   else
     echo "Recent sessions across all projects:"
   fi
@@ -692,8 +631,20 @@ if [[ -z "${FILE:-}" || ! -f "$FILE" ]]; then
   die "Session not found. Run with --list to see options."
 fi
 
+USER_NAME="${USER:-$(id -un)}"
+
 # Descriptive output name: date_project_first-words-of-first-prompt.md
-IFS='|' read -r DAY PROJ SLUG SID <<< "$(jq -Rrn --arg home "$HOME" "$JQ_DEFS $JQ_META" "$FILE" 2>/dev/null || true)"
+IFS='|' read -r DAY PROJ SLUG SID HAS_CONTENT <<< "$(jq -Rrn \
+    --argjson redact "$REDACT" \
+    --arg home "$HOME" \
+    --arg user "$USER_NAME" \
+    --arg domains "$REDACT_DOMAINS" \
+    "$JQ_DEFS $JQ_META" "$FILE" 2>/dev/null || true)"
+# Sessions closed before any prompt (common with the auto-export hook).
+if [[ "${HAS_CONTENT:-}" == "false" ]]; then
+  echo "Skipped $(basename "$FILE"): the session has no prompts or replies." >&2
+  exit 0
+fi
 if [[ -n "$OUT_ARG" ]]; then
   OUT="$OUT_ARG"
 else
@@ -717,6 +668,7 @@ if ! jq -Rrn \
     --argjson redact "$REDACT" \
     --argjson rich "$RICH" \
     --arg home "$HOME" \
+    --arg user "$USER_NAME" \
     --arg domains "$REDACT_DOMAINS" \
     --arg exported "$(date '+%Y-%m-%d %H:%M %Z')" \
     "$JQ_DEFS $JQ_MAIN" "$FILE" > "$TMP"; then
@@ -729,7 +681,7 @@ echo "Exported session from $(short_path "$(session_cwd "$FILE")")"
 echo "  to $(short_path "$OUT")"
 
 if [[ "$REDACT" == "true" ]]; then
-  n="$(grep -oE '\[(REDACTED[A-Z ]*|EMAIL|INTERNAL URL|PRIVATE IP)\]' "$OUT" | wc -l | tr -d ' ' || true)"
+  n="$(grep -oE '\[(REDACTED[A-Z ]*|EMAIL|INTERNAL URL|PRIVATE IP|USER)\]' "$OUT" | wc -l | tr -d ' ' || true)"
   echo "Redacted $n item(s). Automatic redaction can miss things, so skim before sharing."
 fi
 

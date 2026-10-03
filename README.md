@@ -1,5 +1,6 @@
 # claude-export
 
+[![CI](https://github.com/gsanders300/Claude-Export/actions/workflows/ci.yml/badge.svg)](https://github.com/gsanders300/Claude-Export/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/gsanders300/Claude-Export)](https://github.com/gsanders300/Claude-Export/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/gsanders300/Claude-Export)](LICENSE)
 
@@ -11,17 +12,17 @@ It's a single bash script. The only dependency is `jq`.
 
 ## Features
 
-- **Zero configuration:** finds your Claude Code transcript folder and the current project's sessions automatically.
+- **Zero configuration:** finds your Claude Code transcript folder and the current project's sessions automatically, even from a subfolder.
 - **Readable transcripts:** each export has a header (project, branch, duration, model, files changed), a table of contents, and a timed section for each exchange.
 - **Tool activity:** `--tools` adds an appendix of files read, edits (as diffs), and commands with their output, linked from each reply. Add `--rich` to show them inline in collapsible sections.
-- **Redaction:** `--redact` masks API keys, tokens, passwords, private keys, email addresses, internal URLs, private IP addresses, and your home folder.
+- **Redaction:** `--redact` masks API keys, tokens, passwords, private keys, email addresses, internal URLs, private IP addresses, your home folder, and your username, in both the transcript and its file name.
 - **Descriptive file names:** for example, `2026-09-27_uploader_add-retry-with-backoff-to-the.md`.
-- **Auto-export:** an optional Claude Code hook saves every session when it ends.
+- **Auto-export:** an optional Claude Code hook saves every session when it ends, skipping sessions with no prompts.
 - **Safe Markdown:** headings inside messages are demoted so they don't break the outline, and code fences are always long enough to wrap any backticks they contain.
 
 ## Example output
 
-A trimmed export made with `--tools`:
+A trimmed export of the [sample session](tests/fixtures/basic.jsonl) used in the tests, made with `--tools`:
 
 ````markdown
 # Add retry with backoff to the uploader
@@ -136,7 +137,7 @@ claude-export [options] [session] [output.md]
 - **`session`:** a number from `--list`, or a path to a `.jsonl` transcript. Defaults to the most recent session.
 - **`output.md`:** where to write the transcript. Defaults to a descriptive name in the current folder (or `$CLAUDE_EXPORT_DIR`).
 
-Run it from a folder where you've used Claude Code:
+Run it from a project folder (or any subfolder of one) where you've used Claude Code:
 
 ```bash
 claude-export                     # export the most recent session for this folder
@@ -151,9 +152,10 @@ claude-export -o notes.md         # choose the output file
 claude-export ~/path/to/session.jsonl   # export a specific transcript file
 ```
 
-**Tip:** inside a Claude Code session, type `! claude-export` to export the session you're in without leaving it.
+> [!TIP]
+> Inside a Claude Code session, type `! claude-export` to export the session you're in without leaving it.
 
-If no sessions match the current folder, `claude-export` falls back to all projects and tells you so.
+If no sessions match the current folder or its parent folders, `claude-export` falls back to all projects and tells you so.
 
 ### Options
 
@@ -164,7 +166,7 @@ If no sessions match the current folder, `claude-export` falls back to all proje
 | `--where` | Show which transcript and project folders were detected |
 | `--tools` | Include tool activity (files read or edited, commands run) in an appendix, linked from each reply |
 | `--rich` | With `--tools`, show tool activity inline in collapsible sections (needs a viewer that renders HTML, such as VS Code, Obsidian, Typora, or GitHub) |
-| `--redact` | Mask API keys, tokens, passwords, private keys, emails, internal URLs, private IP addresses, and your home folder |
+| `--redact` | Mask API keys, tokens, passwords, private keys, emails, internal URLs, private IP addresses, your home folder, and your username |
 | `--open` | Open the transcript in your default Markdown app (macOS) |
 | `--reveal` | Show the transcript in Finder (macOS) |
 | `--copy` | Copy the transcript to the clipboard (macOS) |
@@ -177,7 +179,7 @@ If no sessions match the current folder, `claude-export` falls back to all proje
 | Variable | Description |
 | --- | --- |
 | `CLAUDE_EXPORT_DIR` | Folder for exports. Default: the current folder. |
-| `CLAUDE_EXPORT_REDACT_DOMAINS` | Comma-separated domains that `--redact` treats as internal. Default: `internalfb.com,fburl.com,fb.workplace.com`. Set it to an empty string to skip URL masking. |
+| `CLAUDE_EXPORT_REDACT_DOMAINS` | Comma-separated domains that `--redact` treats as internal, such as `corp.example.com,intranet.example.org`. Subdomains are included. Default: none. |
 | `CLAUDE_CONFIG_DIR` | Custom Claude Code config folder, if you use one. |
 
 ## Export every session automatically
@@ -201,22 +203,29 @@ Add this hook to `~/.claude/settings.json` to save each session to `~/Documents/
 }
 ```
 
-Add `--redact` or `--tools` to the command to apply them to every export.
+Add `--redact` or `--tools` to the command to apply them to every export. Sessions you close before sending a prompt are skipped, so they don't leave empty files behind.
 
 ## Redaction
 
 `--redact` masks:
 
 - **Credentials:** API keys (Anthropic, OpenAI, AWS, GitHub, Slack, Google, Meta), JWTs, bearer tokens, private key blocks, and `key=value` pairs such as `password=...` or `api_key: ...`.
-- **Personal details:** email addresses and your home folder path (shown as `~`).
-- **Internal addresses:** URLs on the domains in `CLAUDE_EXPORT_REDACT_DOMAINS` and private IP addresses (`10.x`, `172.16-31.x`, `192.168.x`).
+- **Personal details:** email addresses, your home folder path (shown as `~`), and your username (shown as `[USER]`; skipped if it's shorter than 3 characters or `root`).
+- **Internal addresses:** private IP addresses (`10.x`, `172.16-31.x`, `192.168.x`) and URLs on the domains you list in `CLAUDE_EXPORT_REDACT_DOMAINS`. To set them for every export, add a line like this to `~/.zshrc`:
 
-After exporting, it reports how many items it masked. Pattern-based redaction can miss things, so skim a transcript before you share it.
+  ```bash
+  export CLAUDE_EXPORT_REDACT_DOMAINS="corp.example.com,intranet.example.org"
+  ```
+
+The default file name is built from the redacted text, so secrets in your first prompt don't end up in it. After exporting, `claude-export` reports how many items it masked.
+
+> [!WARNING]
+> Pattern-based redaction can miss things. Skim a transcript before you share it.
 
 ## How it works
 
 1. **Finds transcripts.** Checks `$CLAUDE_CONFIG_DIR`, `~/.claude`, and `~/.config/claude` for a `projects` folder.
-2. **Matches your project.** Compares the working directory recorded in each project's newest session against your current folder, including symlink-resolved paths.
+2. **Matches your project.** Compares the working directory recorded in each project's newest session against your current folder, then its parent folders, nearest first. It also checks symlink-resolved paths, and ignores case on macOS. Your home folder only matches exactly, since almost every folder is inside it.
 3. **Converts the session.** A single `jq` program pairs each prompt with its reply. It strips system reminders and slash-command noise, skips subagent transcripts, and renders the result as Markdown.
 4. **Writes the file atomically.** Output goes to a temporary file first, so a failed export never leaves a half-written transcript. If the default name is already taken by a different session, the short session ID is appended.
 
@@ -229,17 +238,11 @@ After exporting, it reports how many items it masked. Pattern-based redaction ca
 | Windows (WSL) | Works when Claude Code also runs inside WSL. Same limits as Linux. |
 | Windows (Git Bash) | Untested. Automatic project matching doesn't work yet, so use `--all --list` and `--all <number>`. |
 
-The comment block at the top of [`claude-export.sh`](claude-export.sh) has detailed Windows notes and a to-do list for full native support.
+See [docs/windows.md](docs/windows.md) for Windows setup notes and a to-do list for full native support.
 
 ## Versioning
 
-This project follows [Semantic Versioning](https://semver.org/). Run `claude-export --version` to see your version. See [CHANGELOG.md](CHANGELOG.md) for what changed in each release, and [Releases](https://github.com/gsanders300/Claude-Export/releases) for downloads.
-
-To cut a release:
-
-1. Update `VERSION` in `claude-export.sh` and add an entry to `CHANGELOG.md`.
-2. Commit, then tag and push: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin main vX.Y.Z`
-3. Publish with the script attached: `gh release create vX.Y.Z claude-export.sh --title "vX.Y.Z" --notes "..."`
+This project follows [Semantic Versioning](https://semver.org/). Run `claude-export --version` to see your version. See [CHANGELOG.md](CHANGELOG.md) for what changed in each release, and [Releases](https://github.com/gsanders300/Claude-Export/releases) for downloads. To run the tests or cut a release, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

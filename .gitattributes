@@ -1,2 +1,4 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Bash fails on Windows (CRLF) line endings, even in a Windows checkout
+*.sh text eol=lf
