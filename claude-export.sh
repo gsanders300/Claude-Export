@@ -47,7 +47,7 @@
 
 set -euo pipefail
 
-VERSION="1.1.0"
+VERSION="1.1.1"
 REDACT_DOMAINS="${CLAUDE_EXPORT_REDACT_DOMAINS:-}"
 
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; }

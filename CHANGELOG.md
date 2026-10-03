@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-10-02
+
+### Added
+
+- Screenshot of a rendered export in the README.
+
 ## [1.1.0] - 2026-10-02
 
 ### Changed
@@ -41,5 +47,6 @@ First public release.
 - `--version`.
 - Optional `SessionEnd` hook for exporting every session automatically.
 
+[1.1.1]: https://github.com/gsanders300/Claude-Export/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/gsanders300/Claude-Export/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/gsanders300/Claude-Export/releases/tag/v1.0.0

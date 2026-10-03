@@ -10,6 +10,10 @@ Claude Code saves every session as a raw JSONL log. `claude-export` finds the se
 
 It's a single bash script. The only dependency is `jq`.
 
+<p align="center">
+  <img src="docs/screenshot.png" width="640" alt="A rendered export: the session title, a summary header with project, branch, duration, and files changed, a table of contents, and the first exchange with its tool activity links">
+</p>
+
 ## Features
 
 - **Zero configuration:** finds your Claude Code transcript folder and the current project's sessions automatically, even from a subfolder.
