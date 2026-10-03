@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # claude-export: export a Claude Code session to a formatted markdown transcript.
+# https://github.com/gsanders300/Claude-Export
 #
 # Finds your Claude Code transcript folder and the current project's sessions
 # automatically. Run it from inside a project folder, or from anywhere with --all.
@@ -66,6 +67,7 @@
 # Other:
 #   -o, --out FILE   Output path (same as the output.md argument)
 #   -h, --help       Show this help
+#   --version        Show the version
 #
 # Environment variables:
 #   CLAUDE_EXPORT_DIR             Folder for exports (default: current folder)
@@ -142,6 +144,7 @@
 
 set -euo pipefail
 
+VERSION="1.0.0"
 REDACT_DOMAINS="${CLAUDE_EXPORT_REDACT_DOMAINS-internalfb.com,fburl.com,fb.workplace.com}"
 
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; }
@@ -168,6 +171,7 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || die "$1 needs a file name."
       OUT_ARG="$2"; shift ;;
     -h|--help) usage; exit 0 ;;
+    --version) echo "claude-export $VERSION"; exit 0 ;;
     -*) die "Unknown option: $1 (see --help)" ;;
     *)
       if [[ -z "$SEL" ]]; then SEL="$1"
