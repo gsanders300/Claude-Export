@@ -110,6 +110,30 @@ Confirm it works:
 claude-export --version
 ```
 
+### Windows
+
+Run these in PowerShell unless noted. You need [Git for Windows](https://git-scm.com/download/win), which Claude Code already requires.
+
+1. Install jq, then restart your terminal:
+
+   ```powershell
+   winget install jqlang.jq
+   ```
+
+2. Pick one:
+
+   - **Git Bash only:** open Git Bash and follow the [quick install](#quick-install) above. Then run `claude-export` from Git Bash, or type `! claude-export` inside Claude Code.
+   - **PowerShell and Command Prompt too:** clone the repo and add its folder to your user `PATH`. `claude-export.cmd` runs the script through Git's `bash.exe`.
+
+     ```powershell
+     git clone https://github.com/gsanders300/Claude-Export.git "$HOME\Claude-Export"
+     [Environment]::SetEnvironmentVariable("Path", "$([Environment]::GetEnvironmentVariable('Path', 'User'));$HOME\Claude-Export", "User")
+     ```
+
+     Restart your terminal, then run `claude-export --version`. If Git isn't in `C:\Program Files\Git`, edit the path in `claude-export.cmd`.
+
+See [docs/windows.md](docs/windows.md) for what differs from macOS and Linux.
+
 ### Install a specific version
 
 Replace `v1.0.0` with any tag from [Releases](https://github.com/gsanders300/Claude-Export/releases):
@@ -130,7 +154,7 @@ Run `git pull` in the clone to update.
 
 ### Update or uninstall
 
-To update, run the quick install again. To uninstall, run `rm ~/bin/claude-export`.
+To update, run the quick install again (or `git pull` in a clone). To uninstall, run `rm ~/bin/claude-export`, or remove the clone and its `PATH` entry.
 
 ## Usage
 
