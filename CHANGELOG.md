@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.2] - 2026-10-24
+
+### Fixed
+
+- Project-matching tests failed on Windows when the temp folder was a `/c/...` path, as on GitHub's runners. The fixtures now record the `C:/...` form that real transcripts use.
+- shellcheck flagged the PowerShell snippet in `--copy`.
+
 ## [1.2.1] - 2026-10-24
 
 ### Added

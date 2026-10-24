@@ -109,10 +109,17 @@ check "says why" "grep -q 'no prompts or replies' '$T/empty.log'"
 
 echo "Project matching"
 mkdir -p "$T/cfg/projects/p1" "$T/work/proj/src/deep" "$T/work/other" "$T/home/notes" "$T/cfg/projects/p2"
-PROJ="$(cd "$T/work/proj" && pwd -P)"
+# Transcripts on Windows record C:/... for a Git Bash /c/... folder.
+cwdform() {
+  if [[ $IS_WIN -eq 1 ]]; then
+    case "$1" in /[a-zA-Z]/*) cygpath -m "$1"; return ;; esac
+  fi
+  printf '%s\n' "$1"
+}
+PROJ="$(cwdform "$(cd "$T/work/proj" && pwd -P)")"
 jq -cn --arg cwd "$PROJ" '{type: "user", sessionId: "s1", cwd: $cwd, timestamp: "2026-09-27T18:00:00.000Z",
   message: {role: "user", content: "hello from proj"}}' > "$T/cfg/projects/p1/s1.jsonl"
-jq -cn --arg cwd "$(cd "$T/home" && pwd -P)" '{type: "user", sessionId: "s2", cwd: $cwd,
+jq -cn --arg cwd "$(cwdform "$(cd "$T/home" && pwd -P)")" '{type: "user", sessionId: "s2", cwd: $cwd,
   timestamp: "2026-09-27T18:00:00.000Z", message: {role: "user", content: "hello from home"}}' > "$T/cfg/projects/p2/s2.jsonl"
 where() { (cd "$1" && CLAUDE_CONFIG_DIR="$T/cfg" HOME="$(cd "$T/home" && pwd -P)" run "${@:2}" 2>&1); }
 check "matches the project folder" "where '$T/work/proj' --where | grep -q '/projects/p1$'"

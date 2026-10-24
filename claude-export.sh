@@ -47,7 +47,7 @@
 
 set -euo pipefail
 
-VERSION="1.2.1"
+VERSION="1.2.2"
 REDACT_DOMAINS="${CLAUDE_EXPORT_REDACT_DOMAINS:-}"
 
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; }
@@ -731,7 +731,8 @@ fi
 # Mac and Windows conveniences
 if [[ $COPY -eq 1 ]]; then
   if [[ $IS_WIN -eq 1 ]]; then
-    # clip.exe garbles non-ASCII text; Set-Clipboard doesn't.
+    # clip.exe garbles non-ASCII text; Set-Clipboard doesn't. $env:CE_FILE is PowerShell's, not bash's.
+    # shellcheck disable=SC2016
     CE_FILE="$(cygpath -w "$OUT")" powershell.exe -NoProfile -Command \
       'Get-Content -Raw -Encoding utf8 -LiteralPath $env:CE_FILE | Set-Clipboard' \
       && echo "Copied to clipboard."
