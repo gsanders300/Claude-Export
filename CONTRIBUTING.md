@@ -12,7 +12,7 @@ The tests export the sample sessions in [`tests/fixtures`](tests/fixtures) and c
 
 After an intentional change to the output, regenerate the expected files with `UPDATE=1 tests/run.sh`, then review the diff before committing it.
 
-CI runs shellcheck and the tests on macOS (bash 3.2), Linux (bash 5), and Linux with jq 1.6.
+CI runs shellcheck and the tests on macOS (bash 3.2), Linux (bash 5), Linux with jq 1.6, and Windows (Git Bash). On Windows, never regenerate the expected files with `UPDATE=1`: they must match the Linux and macOS output byte for byte.
 
 ## Compatibility
 

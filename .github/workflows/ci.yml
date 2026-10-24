@@ -44,6 +44,12 @@ jobs:
             os: ubuntu-latest
             bash: bash
             jq: "1.6"
+          - name: Windows, Git Bash
+            os: windows-latest
+            bash: bash
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Install jq ${{ matrix.jq }}
@@ -53,5 +59,8 @@ jobs:
           curl -fsSL -o "$HOME/jq/jq" "https://github.com/jqlang/jq/releases/download/jq-${{ matrix.jq }}/jq-linux64"
           chmod +x "$HOME/jq/jq"
           echo "$HOME/jq" >> "$GITHUB_PATH"
+      - name: Install jq on Windows if the runner lacks it
+        if: runner.os == 'Windows'
+        run: command -v jq || choco install jq -y --no-progress
       - run: jq --version && ${{ matrix.bash }} --version | head -1
       - run: ${{ matrix.bash }} tests/run.sh

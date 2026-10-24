@@ -2,6 +2,36 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.2] - 2026-10-24
+
+### Fixed
+
+- Project-matching tests failed on Windows when the temp folder was a `/c/...` path, as on GitHub's runners. The fixtures now record the `C:/...` form that real transcripts use.
+- shellcheck flagged the PowerShell snippet in `--copy`.
+
+## [1.2.1] - 2026-10-24
+
+### Added
+
+- Windows install steps in the README.
+
+## [1.2.0] - 2026-10-24
+
+### Added
+
+- Windows 11 support through Git Bash. Project matching, the header, `--redact`, and the auto-export hook now handle Windows paths (`C:\Users\you\project`).
+- `--open`, `--reveal`, and `--copy` work on Windows.
+- `claude-export.cmd`, which runs the script from PowerShell or Command Prompt.
+- A Windows job in CI, and Windows path tests in `tests/run.sh`.
+
+### Changed
+
+- `docs/windows.md` now describes the tested setup instead of a to-do list.
+
+### Fixed
+
+- Test expected files and fixtures are pinned to LF line endings, so the golden tests pass in a Windows checkout.
+
 ## [1.1.1] - 2026-10-02
 
 ### Added

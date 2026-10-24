@@ -26,9 +26,9 @@
 #                    internal URLs, private IP addresses, your home folder,
 #                    and your username
 #
-# Mac conveniences:
+# Mac and Windows conveniences:
 #   --open           Open the transcript in your default markdown app
-#   --reveal         Show the transcript in Finder
+#   --reveal         Show the transcript in Finder or File Explorer
 #   --copy           Copy the transcript to the clipboard
 #
 # Other:
@@ -47,7 +47,7 @@
 
 set -euo pipefail
 
-VERSION="1.1.1"
+VERSION="1.2.2"
 REDACT_DOMAINS="${CLAUDE_EXPORT_REDACT_DOMAINS:-}"
 
 usage() { awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; }
@@ -84,9 +84,37 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-if [[ "$(uname)" == "Darwin" ]]; then IS_MAC=1; JQ_HINT="brew install jq"
-else IS_MAC=0; JQ_HINT="your package manager, for example: sudo apt install jq"; fi
+IS_MAC=0; IS_WIN=0
+case "$(uname)" in
+  Darwin) IS_MAC=1; JQ_HINT="brew install jq" ;;
+  MINGW*|MSYS*|CYGWIN*) IS_WIN=1; JQ_HINT="winget install jqlang.jq" ;;
+  *) JQ_HINT="your package manager, for example: sudo apt install jq" ;;
+esac
 command -v jq >/dev/null 2>&1 || die "jq is not installed. Install it with $JQ_HINT"
+
+# Windows (Git Bash) runs a native jq.exe, which differs from jq on Unix:
+#  - It writes CRLF line endings, so every $(...) result would end in a stray \r.
+#  - Git Bash rewrites path-like arguments (/home/me becomes C:/Program Files/Git/home/me).
+#    Disabling that means files must reach jq on stdin, not as arguments.
+# Transcripts record Windows paths with backslashes; "fwd" turns them into "/".
+if [[ $IS_WIN -eq 1 ]]; then
+  jq() { MSYS2_ARG_CONV_EXCL='*' command jq "$@" | sed 's/\r$//'; }
+  SEL="${SEL%$'\r'}"  # a hook's `jq -r .transcript_path` leaves one behind
+  JQ_FWD='def fwd: gsub("\\\\"; "/");'
+else
+  JQ_FWD='def fwd: .;'
+fi
+
+# C:/Users/me for a Git Bash drive path such as /c/Users/me; anything else unchanged.
+winpath() {
+  if [[ $IS_WIN -eq 1 ]]; then
+    case "$1" in /[a-zA-Z]|/[a-zA-Z]/*) cygpath -m "$1"; return ;; esac
+  fi
+  printf '%s\n' "$1"
+}
+HOME_WIN="$(winpath "$HOME")"
+HOME_ALT=""
+if [[ $IS_WIN -eq 1 ]]; then HOME_ALT="$HOME"; fi  # /c/Users/me, as in Git Bash commands
 case "$(jq --version 2>/dev/null)" in
   jq-1.[0-5]|jq-1.[0-5].*|jq-1.[0-5]-*) die "jq 1.6 or newer is required. Update it with $JQ_HINT" ;;
 esac
@@ -122,10 +150,13 @@ def mdline($name; $val): if ($val // "") == "" then empty else "- **\($name):** 
 
 # --redact. $domains is a comma-separated list; $home becomes "~" (also in
 # the dashed form used for project folder names), and the bare username
-# becomes [USER] unless it's too short or generic to mask safely.
+# becomes [USER] unless it's too short or generic to mask safely. $homealt is
+# another spelling of the home folder (on Windows, the Git Bash form /c/Users/me).
 def domre($domains):
   $domains | split(",") | map(gsub("^\\s+|\\s+$"; "") | select(length > 0) | gsub("\\."; "\\.")) | join("|");
-def redact($domre; $home; $user):
+def homeforms($home; $homealt):
+  [$home, ($home | gsub("/"; "\\")), $homealt] | map(select(. != "")) | unique;
+def redact($domre; $home; $homealt; $user):
   gsub("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----"; "[REDACTED PRIVATE KEY]")
   | gsub("eyJ[A-Za-z0-9_-]{8,}\\.eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}"; "[REDACTED TOKEN]")
   | gsub("\\b(sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|EAA[A-Za-z0-9]{30,})"; "[REDACTED TOKEN]")
@@ -134,17 +165,19 @@ def redact($domre; $home; $user):
   | (if $domre == "" then . else gsub("https?://([A-Za-z0-9-]+\\.)*(\($domre))(/[^\\s)\\]>\"'`]*)?"; "[INTERNAL URL]"; "i") end)
   | gsub("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"; "[EMAIL]")
   | gsub("\\b(10\\.[0-9]{1,3}|192\\.168|172\\.(1[6-9]|2[0-9]|3[01]))\\.[0-9]{1,3}\\.[0-9]{1,3}\\b"; "[PRIVATE IP]")
-  | split($home) | join("~") | split($home | gsub("/"; "-")) | join("~")
+  | reduce homeforms($home; $homealt)[] as $h (.; split($h) | join("~"))
+  | split($home | gsub("[/:]"; "-")) | join("~")
   | if ($user | length) < 3 or $user == "root" then .
     else gsub("\\b\($user | gsub("(?<c>[.^$*+?()\\[\\]{}|\\\\])"; "\\\(.c)"))\\b"; "[USER]"; "i") end;
 JQ
+JQ_DEFS="$JQ_FWD"$'\n'"$JQ_DEFS"
 
 # Filename parts: date|project|title|session id|has content
 read -r -d '' JQ_META << 'JQ' || true
-def scrub: if $redact then redact(domre($domains); $home; $user) else . end;
+def scrub: if $redact then redact(domre($domains); $home; $homealt; $user) else . end;
 entries as $E
 | ($E | map(.timestamp // empty | ts2epoch) | map(select(. != null)) | min | localfmt("%Y-%m-%d")) as $day
-| ($E | map(.cwd // empty) | first // ""
+| ($E | map(.cwd // empty) | first // "" | fwd
    | if . == $home then "home" else (scrub | split("/") | last // "" | slug) end) as $proj
 | ($E | map(select(.type == "user") | prompt_text | select(. != null))) as $prompts
 | ($prompts | first // "" | scrub
@@ -183,7 +216,7 @@ def langmap: {
   cs: "csharp", toml: "toml", xml: "xml", csv: "csv", ini: "ini", r: "r", ipynb: "json"
 };
 def lang_of:
-  (split("/") | last // "" | split(".")) as $p
+  (fwd | split("/") | last // "" | split(".")) as $p
   | if ($p | length) > 1 then ($p[-1] | ascii_downcase) as $ext | (langmap | .[$ext]) // "text" else "text" end;
 
 # Backslash-escape "<" outside inline code so pasted tags stay visible
@@ -296,7 +329,7 @@ def tool_parts($results; $cwd):
   | ($o.file_path // $o.notebook_path // "") as $fp
   | (if $fp == "" then "text" else ($fp | lang_of) end) as $lang
   | ($r != null and $r.is_error == true) as $err
-  | (tool_label | if $cwd != "" then ltrimstr($cwd + "/") else . end) as $lbl
+  | (tool_label | if $cwd != "" then ltrimstr($cwd + "/") | ltrimstr(($cwd | gsub("/"; "\\")) + "\\") else . end) as $lbl
   | (if $name == "Bash" then
        (if ($o.description // "") != "" then "_\($o.description | gsub("<"; "\\<"))_\n\n" else "" end)
        + (($o.command // "") | trunc(3000) | fenced("bash"))
@@ -335,7 +368,7 @@ entries as $E
 | ($times | min) as $start
 | ($times | max) as $finish
 | ($start | localfmt("%Y-%m-%d")) as $day
-| ($E | map(.cwd // empty) | first // "") as $cwd
+| ($E | map(.cwd // empty) | first // "" | fwd) as $cwd
 | ($E | map(.gitBranch // empty | select(. != "" and . != "HEAD")) | first // "") as $branch
 | ($E | map(.version // empty) | first // "") as $version
 | ($E | map(select(.type == "assistant") | .message.model // empty | select(. != "<synthetic>")) | unique | join(", ")) as $models
@@ -346,7 +379,7 @@ entries as $E
 | ($E | map(select(.type == "assistant") | .message.content | select(type == "array") | .[]
           | select(type == "object" and .type == "tool_use"
                    and (.name as $n | ["Edit", "MultiEdit", "Write", "NotebookEdit"] | any(.[]; . == $n)))
-          | (.input.file_path // .input.notebook_path // empty))
+          | (.input.file_path // .input.notebook_path // empty | fwd))
       | unique) as $changed
 | [ $E[]
     | if .type == "user" then
@@ -471,7 +504,7 @@ entries as $E
    end) as $appendix
 | ("# \($title)\n\n" + $header + (if $toc == "" then "" else "\n\n" + $toc end) + "\n\n---\n\n" + $body
    + (if $appendix == "" then "" else "\n\n---\n\n## Tool activity\n\n" + $appendix end) + "\n")
-| if $redact then redact(domre($domains); $home; $user) else . end
+| if $redact then redact(domre($domains); $home; $homealt; $user) else . end
 JQ
 
 # ---------------------------------------------------------------------------
@@ -493,19 +526,23 @@ find_roots() {
 }
 
 session_cwd() {
-  jq -Rrn 'first(inputs | fromjson? | select(type == "object" and .cwd) | .cwd)' "$1" 2>/dev/null || true
+  local c
+  c="$(jq -Rrn 'first(inputs | fromjson? | select(type == "object" and .cwd) | .cwd)' 2>/dev/null < "$1" || true)"
+  if [[ $IS_WIN -eq 1 ]]; then c="${c//\\//}"; fi
+  printf '%s\n' "$c"
 }
 
 first_prompt() {
   { jq -Rrn "$JQ_DEFS"'
       first(inputs | fromjson? | select(type == "object" and .type == "user" and .isSidechain != true)
-            | prompt_text | select(. != null))' "$1" 2>/dev/null || true; } \
+            | prompt_text | select(. != null))' 2>/dev/null < "$1" || true; } \
     | tr '\n' ' ' | sed 's/[[:space:]]*$//' | cut -c1-70
 }
 
 short_path() {
   case "$1" in
     "$HOME"*) echo "~${1#"$HOME"}" ;;
+    "$HOME_WIN"*) echo "~${1#"$HOME_WIN"}" ;;
     *) echo "$1" ;;
   esac
 }
@@ -518,17 +555,20 @@ if [[ -z "$ROOTS" && ( "$MODE" != export || "$SEL" != *.jsonl ) ]]; then
   die "If yours is elsewhere, set CLAUDE_CONFIG_DIR to the folder that contains 'projects'."
 fi
 
-HERE="$(pwd)"
-HERE_REAL="$(pwd -P)"
+HERE_U="$(pwd)"
+HERE_REAL_U="$(pwd -P)"
+# Compared with the folders in transcripts (C:/Users/me/project on Windows).
+HERE="$(winpath "$HERE_U")"
+HERE_REAL="$(winpath "$HERE_REAL_U")"
 
 # Match the working directory recorded inside each project's newest session,
 # trying the current folder first, then its parents, nearest first. $HOME and
 # / only match exactly, since almost every folder is inside them.
-# macOS folder names are case-insensitive, so paths are compared that way there.
+# macOS and Windows folder names are case-insensitive, so paths are compared that way there.
 # Prints: project folder<TAB>matching folder (the current one or a parent)
 find_project_dir() {
-  local root dir f cwd map="" a="$HERE" b="$HERE_REAL" d fold=0
-  if [[ $IS_MAC -eq 1 ]]; then shopt -s nocasematch; fold=1; fi
+  local root dir f cwd map="" a="$HERE_U" b="$HERE_REAL_U" d fold=0
+  if [[ $IS_MAC -eq 1 || $IS_WIN -eq 1 ]]; then shopt -s nocasematch; fold=1; fi
   while IFS= read -r root; do
     for dir in "$root"/*/; do
       [[ -d "$dir" ]] || continue
@@ -547,6 +587,7 @@ find_project_dir() {
     a="$(dirname "$a")"; b="$(dirname "$b")"
     for d in "$a" "$b"; do
       if [[ "$d" == / || "$d" == "$HOME" ]]; then continue; fi
+      d="$(winpath "$d")"
       dir="$(D="$d" F=$fold awk -F'\t' '
         function k(s) { return ENVIRON["F"] == 1 ? tolower(s) : s }
         k($1) == k(ENVIRON["D"]) { print $2; exit }' <<< "$map")"
@@ -636,10 +677,11 @@ USER_NAME="${USER:-$(id -un)}"
 # Descriptive output name: date_project_first-words-of-first-prompt.md
 IFS='|' read -r DAY PROJ SLUG SID HAS_CONTENT <<< "$(jq -Rrn \
     --argjson redact "$REDACT" \
-    --arg home "$HOME" \
+    --arg home "$HOME_WIN" \
+    --arg homealt "$HOME_ALT" \
     --arg user "$USER_NAME" \
     --arg domains "$REDACT_DOMAINS" \
-    "$JQ_DEFS $JQ_META" "$FILE" 2>/dev/null || true)"
+    "$JQ_DEFS $JQ_META" 2>/dev/null < "$FILE" || true)"
 # Sessions closed before any prompt (common with the auto-export hook).
 if [[ "${HAS_CONTENT:-}" == "false" ]]; then
   echo "Skipped $(basename "$FILE"): the session has no prompts or replies." >&2
@@ -667,11 +709,12 @@ if ! jq -Rrn \
     --argjson tools "$TOOLS" \
     --argjson redact "$REDACT" \
     --argjson rich "$RICH" \
-    --arg home "$HOME" \
+    --arg home "$HOME_WIN" \
+    --arg homealt "$HOME_ALT" \
     --arg user "$USER_NAME" \
     --arg domains "$REDACT_DOMAINS" \
     --arg exported "$(date '+%Y-%m-%d %H:%M %Z')" \
-    "$JQ_DEFS $JQ_MAIN" "$FILE" > "$TMP"; then
+    "$JQ_DEFS $JQ_MAIN" < "$FILE" > "$TMP"; then
   rm -f "$TMP"
   die "Export failed while converting $(basename "$FILE")."
 fi
@@ -685,19 +728,30 @@ if [[ "$REDACT" == "true" ]]; then
   echo "Redacted $n item(s). Automatic redaction can miss things, so skim before sharing."
 fi
 
-# Mac conveniences
+# Mac and Windows conveniences
 if [[ $COPY -eq 1 ]]; then
-  if command -v pbcopy >/dev/null 2>&1; then
+  if [[ $IS_WIN -eq 1 ]]; then
+    # clip.exe garbles non-ASCII text; Set-Clipboard doesn't. $env:CE_FILE is PowerShell's, not bash's.
+    # shellcheck disable=SC2016
+    CE_FILE="$(cygpath -w "$OUT")" powershell.exe -NoProfile -Command \
+      'Get-Content -Raw -Encoding utf8 -LiteralPath $env:CE_FILE | Set-Clipboard' \
+      && echo "Copied to clipboard."
+  elif command -v pbcopy >/dev/null 2>&1; then
     pbcopy < "$OUT" && echo "Copied to clipboard."
   else
-    echo "--copy needs pbcopy, which is only available on macOS." >&2
+    echo "--copy needs pbcopy (macOS) or Windows." >&2
   fi
 fi
 if [[ $OPEN -eq 1 || $REVEAL -eq 1 ]]; then
-  if [[ "$(uname)" == "Darwin" ]]; then
+  if [[ $IS_MAC -eq 1 ]]; then
     if [[ $OPEN -eq 1 ]]; then open "$OUT"; fi
     if [[ $REVEAL -eq 1 ]]; then open -R "$OUT"; fi
+  elif [[ $IS_WIN -eq 1 ]]; then
+    if [[ $OPEN -eq 1 ]]; then cmd.exe //c start "" "$(cygpath -w "$OUT")"; fi
+    # Explorer needs backslashes after /select, and ignores the file otherwise, so turn off
+    # Git Bash's path conversion. explorer.exe often exits 1 even when it works.
+    if [[ $REVEAL -eq 1 ]]; then MSYS2_ARG_CONV_EXCL='*' explorer.exe "/select,$(cygpath -w "$OUT")" || true; fi
   else
-    echo "--open and --reveal are only available on macOS." >&2
+    echo "--open and --reveal are only available on macOS and Windows." >&2
   fi
 fi
