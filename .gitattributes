@@ -2,3 +2,8 @@
 * text=auto
 # Bash fails on Windows (CRLF) line endings, even in a Windows checkout
 *.sh text eol=lf
+# Golden files must match the Linux and macOS output byte for byte
+tests/expected/** text eol=lf
+tests/fixtures/** text eol=lf
+# Windows batch files need CRLF
+*.cmd text eol=crlf

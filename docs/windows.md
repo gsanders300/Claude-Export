@@ -1,49 +1,49 @@
 # Windows notes
 
-> [!NOTE]
-> None of this has been tested. These notes are a starting point for future work.
+`claude-export` runs natively on Windows 11 through Git Bash (part of [Git for Windows](https://git-scm.com/download/win), which Claude Code already needs). Nothing here requires WSL.
 
-## Running it today
+## Native Windows (Git Bash)
 
-### WSL
+1. Install jq from PowerShell, then restart your terminal and check it:
 
-Works as is, as long as Claude Code also runs inside WSL (its transcripts then live in the WSL home folder). Only `--open`, `--reveal`, and `--copy` are unavailable; they print a warning.
-
-### Native Windows (Claude Code using Git Bash)
-
-Run the script from Git Bash, not PowerShell or Command Prompt.
-
-1. Install jq from PowerShell, then restart Git Bash and check it:
-
-   ```bash
+   ```powershell
    winget install jqlang.jq
    jq --version
    ```
 
-2. Save the script as `~/bin/claude-export` with Unix (LF) line endings. Windows (CRLF) line endings stop bash from running it. To fix a file that has them:
+2. Save the script as `~/bin/claude-export` with the [quick install](../README.md#quick-install) commands, run in Git Bash. If you copy the file another way, it needs Unix (LF) line endings. To fix one that has Windows (CRLF) endings:
 
    ```bash
    sed -i 's/\r$//' ~/bin/claude-export
    ```
 
-3. If `~/bin` isn't on your `PATH`, add the `PATH` line from the [README's quick install](../README.md#quick-install) to `~/.bashrc`.
-4. Automatic project matching doesn't work yet (see to-do 1), so use the all-projects list:
+3. If `~/bin` isn't on your `PATH`, add the `PATH` line from the quick install to `~/.bashrc`.
+4. Check that it finds your project, from a folder where you've used Claude Code:
 
    ```bash
-   claude-export --all --list
-   claude-export --all 3
+   claude-export --where
+   claude-export --list
    ```
 
-## To-do for full native Windows support
+Inside a Claude Code session, `! claude-export` works as it does on macOS and Linux.
 
-1. **Project matching (`find_project_dir`).** Transcripts record Windows paths such as `C:\Users\geoff\project`, but Git Bash's `pwd` returns `/c/Users/geoff/project`, so they never match. Convert before comparing, for example `HERE_WIN="$(cygpath -w "$HERE")"`, and compare case-insensitively, since Windows paths are. `short_path` also assumes a Unix-style `$HOME` and needs the same treatment.
-2. **Paths inside the jq program.** The Project header line, the Files changed list (which trims `"$cwd/"`), and `--redact`'s home-folder masking all compare against Unix-style paths. Pass the Windows form of `$HOME` as well (`cygpath -w "$HOME"`) and handle backslash separators.
-3. **Mac conveniences.** Detect Windows with `case "$(uname)" in MINGW*|MSYS*|CYGWIN*) ... ;; esac`, then map:
-   - `--open`: `start "" "$OUT"`
-   - `--reveal`: `explorer //select,"$(cygpath -w "$OUT")"` (the double slash stops Git Bash converting `/select`)
-   - `--copy`: `clip < "$OUT"` (`clip` can garble non-English characters; PowerShell's `Get-Content -Raw ... | Set-Clipboard` is a safer option)
+### Running it from PowerShell or Command Prompt
 
-   For WSL, the equivalents are `wslview` (from the `wslu` package) for `--open` and `clip.exe` for `--copy`.
-4. **Timestamps.** Check that jq's `strflocaltime` shows the correct local time and time zone name in Windows builds of jq. If it doesn't, switch to `strftime` and label times as UTC.
-5. **Auto-export hook.** Claude Code runs hook commands through Git Bash on Windows, so the [auto-export hook](../README.md#export-every-session-automatically) should work. Check that `transcript_path` arrives in a form the script's file checks accept, and change `~/Documents/claude-transcripts` to a Windows-friendly location if needed.
-6. **Testing.** Run `--where` and `--list` first, then export a short session with `--tools`, and confirm the header, links, and tool appendix look right before relying on it. The test suite (`tests/run.sh`) should also pass from Git Bash.
+[`claude-export.cmd`](../claude-export.cmd) in this repo starts the script with Git's `bash.exe`. Put the folder that holds both files on your `PATH` (or keep them side by side), then run `claude-export` from any shell. If Git isn't in `C:\Program Files\Git`, edit the path in the `.cmd` file.
+
+### What differs from macOS and Linux
+
+- **Transcript paths:** Claude Code records `C:\Users\you\project`. The script converts between that and Git Bash's `/c/Users/you/project` for project matching, the **Project** header line, the **Files changed** list, and `--redact`.
+- **Time zone names:** the header shows Windows' long name ("Eastern Daylight Time") where macOS and Linux show "EDT". The times are correct.
+- **`--open`** starts the default app for `.md` files, **`--reveal`** selects the file in File Explorer, and **`--copy`** uses PowerShell's `Set-Clipboard` (so non-English text survives).
+- **Auto-export hook:** the [README's hook](../README.md#export-every-session-automatically) works as written. Claude Code runs it through Git Bash, and the script strips the stray carriage return that `jq.exe` adds to `$(jq -r ...)`.
+
+## WSL
+
+Works as on Linux, as long as Claude Code also runs inside WSL (its transcripts then live in the WSL home folder). `--open`, `--reveal`, and `--copy` print a warning there.
+
+## Testing
+
+Run `bash tests/run.sh` from Git Bash. CI runs it on `windows-latest` too.
+
+Not covered by the tests: `--open`, `--reveal`, and a Windows machine with jq 1.6 (the oldest supported version). CI installs the runner's jq, which is newer.

@@ -19,6 +19,15 @@ trap 'rm -rf "$T"' EXIT
 export TZ=UTC HOME=/home/tester USER=tester
 unset CLAUDE_CONFIG_DIR XDG_CONFIG_HOME CLAUDE_EXPORT_DIR CLAUDE_EXPORT_REDACT_DOMAINS
 
+# Windows (Git Bash): the same jq.exe workarounds as claude-export.sh, for the
+# fixtures this file builds with jq.
+IS_WIN=0
+case "$(uname)" in MINGW*|MSYS*|CYGWIN*) IS_WIN=1 ;; esac
+if [[ $IS_WIN -eq 1 ]]; then
+  export MSYS2_ARG_CONV_EXCL='*'
+  jq() { command jq "$@" | sed 's/\r$//'; }
+fi
+
 PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok    $1"; }
 fail() {
@@ -116,6 +125,22 @@ check "doesn't match \$HOME as a parent" "where '$T/home/notes' --where | grep -
 if [[ "$(uname)" == "Darwin" ]]; then
   UPPER="$(printf '%s' "$T/work/proj" | tr '[:lower:]' '[:upper:]')"
   check "ignores case on macOS" "where '$UPPER' --where | grep -q '/projects/p1$'"
+fi
+
+if [[ $IS_WIN -eq 1 ]]; then
+  echo "Windows paths"
+  # Transcripts record C:\Users\me\...; Git Bash spells the same folder /c/Users/me/...
+  jq -cn '{type: "user", sessionId: "w1", cwd: "C:\\Users\\tester\\code\\app", timestamp: "2026-09-27T18:00:00.000Z",
+    message: {role: "user", content: "See C:\\Users\\tester\\code\\app\\main.py and /c/Users/tester/notes.txt"}}' > "$T/win.jsonl"
+  jq -cn '{type: "assistant", sessionId: "w1", cwd: "C:\\Users\\tester\\code\\app", timestamp: "2026-09-27T18:00:05.000Z",
+    message: {id: "m1", model: "claude-opus-5-5", content: [
+      {type: "tool_use", id: "t1", name: "Edit", input: {file_path: "C:\\Users\\tester\\code\\app\\src\\a.py", old_string: "x", new_string: "y"}},
+      {type: "text", text: "Done."}]}}' >> "$T/win.jsonl"
+  HOME=/c/Users/tester run --tools --redact -o "$T/win.md" "$T/win.jsonl" > /dev/null
+  check "shows the project as ~/code/app" "grep -qF '**Project:** \`~/code/app\`' '$T/win.md'"
+  check "lists changed files relative to the project" "grep -qF '**Files changed:** \`src/a.py\`' '$T/win.md'"
+  check "masks the home folder in both spellings" "! grep -qiE 'C:.Users.tester|/c/Users/tester' '$T/win.md'"
+  check "writes LF line endings" "! grep -q \"\$(printf '\\r')\" '$T/win.md'"
 fi
 
 echo "Options"

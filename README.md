@@ -81,8 +81,8 @@ Added exponential backoff to `upload_file()`: up to 5 attempts, starting at 1 se
 
 ## Requirements
 
-- **macOS or Linux:** tested with macOS's built-in bash 3.2 and bash 5. Windows works through WSL (see [Platform support](#platform-support)).
-- **jq 1.6 or newer:** check with `jq --version`. Install with `brew install jq` (macOS) or `sudo apt install jq` (Debian/Ubuntu).
+- **macOS, Linux, or Windows 11:** tested with macOS's built-in bash 3.2 and bash 5. On Windows, run it in Git Bash (see [Platform support](#platform-support)); WSL also works.
+- **jq 1.6 or newer:** check with `jq --version`. Install with `brew install jq` (macOS), `sudo apt install jq` (Debian/Ubuntu), or `winget install jqlang.jq` (Windows).
 - **Claude Code:** at least 1 session in `~/.claude/projects`.
 
 ## Installation
@@ -151,7 +151,7 @@ claude-export --all --list        # list sessions across all projects
 claude-export --all 2             # export session 2 from the all-projects list
 claude-export --tools             # include tool activity in an appendix
 claude-export --tools --rich      # show tool activity inline, in collapsible sections
-claude-export --redact --copy     # mask secrets, then copy to the clipboard (macOS)
+claude-export --redact --copy     # mask secrets, then copy to the clipboard (macOS and Windows)
 claude-export -o notes.md         # choose the output file
 claude-export ~/path/to/session.jsonl   # export a specific transcript file
 ```
@@ -171,9 +171,9 @@ If no sessions match the current folder or its parent folders, `claude-export` f
 | `--tools` | Include tool activity (files read or edited, commands run) in an appendix, linked from each reply |
 | `--rich` | With `--tools`, show tool activity inline in collapsible sections (needs a viewer that renders HTML, such as VS Code, Obsidian, Typora, or GitHub) |
 | `--redact` | Mask API keys, tokens, passwords, private keys, emails, internal URLs, private IP addresses, your home folder, and your username |
-| `--open` | Open the transcript in your default Markdown app (macOS) |
-| `--reveal` | Show the transcript in Finder (macOS) |
-| `--copy` | Copy the transcript to the clipboard (macOS) |
+| `--open` | Open the transcript in your default Markdown app (macOS and Windows) |
+| `--reveal` | Show the transcript in Finder or File Explorer (macOS and Windows) |
+| `--copy` | Copy the transcript to the clipboard (macOS and Windows) |
 | `-o`, `--out FILE` | Output path (same as the `output.md` argument) |
 | `-h`, `--help` | Show help |
 | `--version` | Show the version |
@@ -229,7 +229,7 @@ The default file name is built from the redacted text, so secrets in your first 
 ## How it works
 
 1. **Finds transcripts.** Checks `$CLAUDE_CONFIG_DIR`, `~/.claude`, and `~/.config/claude` for a `projects` folder.
-2. **Matches your project.** Compares the working directory recorded in each project's newest session against your current folder, then its parent folders, nearest first. It also checks symlink-resolved paths, and ignores case on macOS. Your home folder only matches exactly, since almost every folder is inside it.
+2. **Matches your project.** Compares the working directory recorded in each project's newest session against your current folder, then its parent folders, nearest first. It also checks symlink-resolved paths, and ignores case on macOS and Windows. Your home folder only matches exactly, since almost every folder is inside it.
 3. **Converts the session.** A single `jq` program pairs each prompt with its reply. It strips system reminders and slash-command noise, skips subagent transcripts, and renders the result as Markdown.
 4. **Writes the file atomically.** Output goes to a temporary file first, so a failed export never leaves a half-written transcript. If the default name is already taken by a different session, the short session ID is appended.
 
@@ -238,11 +238,11 @@ The default file name is built from the redacted text, so secrets in your first 
 | Platform | Status |
 | --- | --- |
 | macOS | Fully supported |
-| Linux | Supported. `--open`, `--reveal`, and `--copy` are macOS only and print a warning. |
+| Linux | Supported. `--open`, `--reveal`, and `--copy` are macOS and Windows only and print a warning. |
 | Windows (WSL) | Works when Claude Code also runs inside WSL. Same limits as Linux. |
-| Windows (Git Bash) | Untested. Automatic project matching doesn't work yet, so use `--all --list` and `--all <number>`. |
+| Windows 11 (Git Bash) | Supported. See [docs/windows.md](docs/windows.md). `claude-export.cmd` lets you run it from PowerShell. |
 
-See [docs/windows.md](docs/windows.md) for Windows setup notes and a to-do list for full native support.
+See [docs/windows.md](docs/windows.md) for Windows setup and differences.
 
 ## Versioning
 
