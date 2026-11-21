@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.3] - 2026-11-21
+
+### Changed
+
+- CI pins `actions/checkout` to the v7.0.1 commit SHA, and Dependabot now opens a weekly pull request for GitHub Actions updates.
+
 ## [1.2.2] - 2026-10-24
 
 ### Fixed
